@@ -5,6 +5,9 @@
 .env.test.local
 .env.production.local
 
+# Claude Code files
+.claude
+
 # Go build artifacts
 *.exe
 *.exe~

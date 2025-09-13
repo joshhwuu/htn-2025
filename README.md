@@ -30,13 +30,18 @@ Get yours at: https://console.cloud.google.com/apis/credentials
 ```bash
 git clone https://github.com/joshhwuu/htn-2025.git
 cd htn-2025
-go mod tidy
 
 # Add your API key
 export GOOGLE_MAPS_API_KEY="your-key-here"
 
-# Start the server
-go run cmd/main.go
+# Easy way - use the script
+./scripts/run.sh
+
+# Or use make
+make run
+
+# Or traditional way
+go mod tidy && go run cmd/main.go
 ```
 
 ### 3. Plan Your Trip
@@ -117,12 +122,24 @@ The system uses real Vancouver parking meter data:
 ## Testing
 
 ```bash
-# Run all tests
-go test ./...
+# Easy way - use the script
+./scripts/test.sh
 
-# Run with integration tests (needs API key)
-GOOGLE_MAPS_API_KEY=your-key go test ./test/
+# Or use make
+make test
+
+# Or traditional way
+go test ./...
 ```
+
+## Available Scripts
+
+- `make help` - Show all available commands
+- `make test` - Run all tests
+- `make run` - Start the server
+- `make dev` - Setup development environment
+- `make demo` - Run API demo
+- `make build` - Build binary
 
 ## Project Structure
 
