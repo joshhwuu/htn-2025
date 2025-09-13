@@ -12,14 +12,7 @@ if ! command -v go &> /dev/null; then
     exit 1
 fi
 
-# Check if API key is set
-if [ -z "$GOOGLE_MAPS_API_KEY" ]; then
-    echo "❌ GOOGLE_MAPS_API_KEY environment variable is required"
-    echo
-    echo "Get your API key at: https://console.cloud.google.com/apis/credentials"
-    echo "Then run: export GOOGLE_MAPS_API_KEY=your-key-here"
-    exit 1
-fi
+# API key will be loaded from .env file by the Go application
 
 # Install dependencies
 echo "📦 Installing dependencies..."

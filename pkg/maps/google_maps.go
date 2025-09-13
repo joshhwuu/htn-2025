@@ -39,12 +39,11 @@ func (s *GoogleMapsService) GetTravelTime(from, to *domain.Location, departureTi
 	ctx := context.Background()
 
 	req := &maps.DistanceMatrixRequest{
-		Origins:       []string{fmt.Sprintf("%f,%f", from.Lat, from.Lng)},
-		Destinations:  []string{fmt.Sprintf("%f,%f", to.Lat, to.Lng)},
-		Mode:          maps.TravelModeDriving,
-		Units:         maps.UnitsMetric,
-		DepartureTime: fmt.Sprintf("%d", departureTime.Unix()),
-		TrafficModel:  maps.TrafficModelBestGuess,
+		Origins:      []string{fmt.Sprintf("%f,%f", from.Lat, from.Lng)},
+		Destinations: []string{fmt.Sprintf("%f,%f", to.Lat, to.Lng)},
+		Mode:         maps.TravelModeDriving,
+		Units:        maps.UnitsMetric,
+		// Remove traffic parameters that require premium APIs
 	}
 
 	resp, err := s.client.DistanceMatrix(ctx, req)
@@ -61,8 +60,8 @@ func (s *GoogleMapsService) GetTravelTime(from, to *domain.Location, departureTi
 		return 0, fmt.Errorf("route calculation failed: %s", element.Status)
 	}
 
-	// Return duration in minutes
-	return int(element.DurationInTraffic.Minutes()), nil
+	// Return duration in minutes (use regular duration since we're not using traffic)
+	return int(element.Duration.Minutes()), nil
 }
 
 // GetTravelTimeMatrix calculates travel times between all pairs of locations
@@ -77,12 +76,11 @@ func (s *GoogleMapsService) GetTravelTimeMatrix(locations []*domain.Location, de
 	}
 
 	req := &maps.DistanceMatrixRequest{
-		Origins:       coords,
-		Destinations:  coords,
-		Mode:          maps.TravelModeDriving,
-		Units:         maps.UnitsMetric,
-		DepartureTime: fmt.Sprintf("%d", departureTime.Unix()),
-		TrafficModel:  maps.TrafficModelBestGuess,
+		Origins:      coords,
+		Destinations: coords,
+		Mode:         maps.TravelModeDriving,
+		Units:        maps.UnitsMetric,
+		// Remove traffic parameters that require premium APIs
 	}
 
 	resp, err := s.client.DistanceMatrix(ctx, req)

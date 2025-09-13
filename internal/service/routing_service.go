@@ -33,6 +33,8 @@ func NewRoutingService(parkingRepo repository.ParkingRepository, mapsService map
 
 // PlanTrip creates three optimized trip plans: cheapest, fastest, and hybrid
 func (s *DefaultRoutingService) PlanTrip(request *domain.TripRequest) ([]*domain.TripPlan, error) {
+	fmt.Printf("[DEBUG] PlanTrip started with %d stops\n", len(request.Stops))
+
 	if len(request.Stops) < 2 {
 		return nil, fmt.Errorf("at least 2 stops are required")
 	}
@@ -40,6 +42,7 @@ func (s *DefaultRoutingService) PlanTrip(request *domain.TripRequest) ([]*domain
 	// Step 1: Geocode all stops if needed
 	stops := make([]*domain.Stop, len(request.Stops))
 	for i, stop := range request.Stops {
+		fmt.Printf("[DEBUG] Processing stop %d: %s\n", i, stop.Address)
 		stops[i] = &domain.Stop{
 			ID:       stop.ID,
 			Address:  stop.Address,
@@ -50,22 +53,28 @@ func (s *DefaultRoutingService) PlanTrip(request *domain.TripRequest) ([]*domain
 
 		// Geocode if coordinates are missing
 		if stops[i].Lat == 0 && stops[i].Lng == 0 {
+			fmt.Printf("[DEBUG] Geocoding address: %s\n", stop.Address)
 			location, err := s.mapsService.GeocodeAddress(stop.Address)
 			if err != nil {
+				fmt.Printf("[DEBUG] Geocoding failed: %v\n", err)
 				return nil, fmt.Errorf("failed to geocode address %s: %w", stop.Address, err)
 			}
 			stops[i].Lat = location.Lat
 			stops[i].Lng = location.Lng
+			fmt.Printf("[DEBUG] Geocoded to: %.6f, %.6f\n", location.Lat, location.Lng)
 		}
 	}
 
 	// Step 2: Find parking options for each stop
 	stopParkingOptions := make(map[string][]*domain.ParkingMeter)
 	for _, stop := range stops {
-		meters, err := s.parkingRepo.GetParkingMetersNear(stop.Lat, stop.Lng, 0.5) // 500m radius
+		fmt.Printf("[DEBUG] Finding parking meters for stop: %s (%.6f, %.6f)\n", stop.Address, stop.Lat, stop.Lng)
+		meters, err := s.parkingRepo.GetParkingMetersNear(stop.Lat, stop.Lng, 2.0) // 2km radius
 		if err != nil {
+			fmt.Printf("[DEBUG] Error getting parking meters: %v\n", err)
 			return nil, fmt.Errorf("failed to get parking meters for stop %s: %w", stop.Address, err)
 		}
+		fmt.Printf("[DEBUG] Found %d parking meters for stop: %s\n", len(meters), stop.Address)
 
 		// Limit to top 10 closest meters to avoid excessive combinations
 		if len(meters) > 10 {
@@ -78,16 +87,20 @@ func (s *DefaultRoutingService) PlanTrip(request *domain.TripRequest) ([]*domain
 				return distI < distJ
 			})
 			meters = meters[:10]
+			fmt.Printf("[DEBUG] Limited to top 10 meters for stop: %s\n", stop.Address)
 		}
 
 		stopParkingOptions[stop.ID] = meters
 	}
 
 	// Step 3: Generate and evaluate route combinations
+	fmt.Printf("[DEBUG] Generating routes...\n")
 	routes := s.generateRoutes(stops, stopParkingOptions, request)
+	fmt.Printf("[DEBUG] Generated %d route candidates\n", len(routes))
 
 	// Step 4: Select the best routes for each objective
 	plans := s.selectOptimalPlans(routes)
+	fmt.Printf("[DEBUG] Selected %d optimal plans\n", len(plans))
 
 	return plans, nil
 }

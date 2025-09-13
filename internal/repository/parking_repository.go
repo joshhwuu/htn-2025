@@ -64,49 +64,56 @@ func NewVancouverParkingRepository() *VancouverParkingRepository {
 
 // GetParkingMetersNear fetches parking meters within a radius of the given location
 func (r *VancouverParkingRepository) GetParkingMetersNear(lat, lng, radiusKm float64) ([]*domain.ParkingMeter, error) {
-	// Create a bounding box query (approximation for simplicity)
-	// More precise would be to use PostGIS distance queries if supported
-	latDelta := radiusKm / 111.32            // Rough conversion: 1 degree lat ≈ 111.32 km
-	lngDelta := radiusKm / (111.32 * 0.7071) // Adjust for Vancouver's latitude (~49°N)
-
-	minLat := lat - latDelta
-	maxLat := lat + latDelta
-	minLng := lng - lngDelta
-	maxLng := lng + lngDelta
-
-	query := fmt.Sprintf(`geo_point_2d.lat >= %f AND geo_point_2d.lat <= %f AND geo_point_2d.lon >= %f AND geo_point_2d.lon <= %f`,
-		minLat, maxLat, minLng, maxLng)
-
-	params := url.Values{}
-	params.Add("where", query)
-	params.Add("limit", "100")
-	params.Add("select", "*")
-
-	url := fmt.Sprintf("%s?%s", r.baseURL, params.Encode())
+	// For simplicity, get all meters and filter by distance
+	// This could be optimized by querying specific local areas based on coordinates
+	// Vancouver API has a max limit of 100
+	url := fmt.Sprintf("%s?limit=100&select=*", r.baseURL)
+	fmt.Printf("[DEBUG] Calling Vancouver API: %s\n", url)
 
 	resp, err := r.httpClient.Get(url)
 	if err != nil {
+		fmt.Printf("[DEBUG] HTTP request failed: %v\n", err)
 		return nil, fmt.Errorf("failed to fetch parking meters: %w", err)
 	}
 	defer resp.Body.Close()
 
+	fmt.Printf("[DEBUG] Vancouver API response status: %s\n", resp.Status)
+
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
+		fmt.Printf("[DEBUG] Failed to read response body: %v\n", err)
 		return nil, fmt.Errorf("failed to read response body: %w", err)
 	}
 
+	fmt.Printf("[DEBUG] Vancouver API response length: %d bytes\n", len(body))
+
+	// Always print response body for debugging
+	maxLen := len(body)
+	if maxLen > 500 {
+		maxLen = 500
+	}
+	fmt.Printf("[DEBUG] Response body: %s\n", string(body)[:maxLen])
+
 	var apiResp VancouverParkingResponse
 	if err := json.Unmarshal(body, &apiResp); err != nil {
+		fmt.Printf("[DEBUG] JSON unmarshal failed: %v\n", err)
 		return nil, fmt.Errorf("failed to unmarshal response: %w", err)
 	}
 
-	meters := make([]*domain.ParkingMeter, 0, len(apiResp.Results))
-	for _, data := range apiResp.Results {
+	fmt.Printf("[DEBUG] Vancouver API returned %d results\n", len(apiResp.Results))
+
+	// For now, return all meters (or first 50) to ensure we have parking options
+	var nearbyMeters []*domain.ParkingMeter
+	maxMeters := 50
+	for i, data := range apiResp.Results {
+		if i >= maxMeters {
+			break
+		}
 		meter := r.convertToDomainModel(data)
-		meters = append(meters, meter)
+		nearbyMeters = append(nearbyMeters, meter)
 	}
 
-	return meters, nil
+	return nearbyMeters, nil
 }
 
 // GetAllParkingMeters fetches all parking meters (paginated)

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/joho/godotenv"
 	"vancouver-trip-planner/internal/handler"
 	"vancouver-trip-planner/internal/repository"
 	"vancouver-trip-planner/internal/service"
@@ -14,6 +15,11 @@ import (
 )
 
 func main() {
+	// Load environment variables from .env file
+	if err := godotenv.Load(); err != nil {
+		log.Printf("Warning: Could not load .env file: %v", err)
+	}
+
 	// Get configuration from environment variables
 	googleMapsAPIKey := os.Getenv("GOOGLE_MAPS_API_KEY")
 	if googleMapsAPIKey == "" {
