@@ -74,133 +74,75 @@ const MapComponent = ({ stops, route, className }: GoogleMapProps) => {
     setMarkers([])
   }, [stops, route])
 
-  // Add stop markers
-  useEffect(() => {
-    if (!map) return
-
-    const newMarkers: google.maps.Marker[] = []
-
-    stops.forEach((stop, index) => {
-      if (stop.lat && stop.lng) {
-        const marker = new google.maps.Marker({
-          position: { lat: stop.lat, lng: stop.lng },
-          map: map,
-          title: stop.address,
-          label: {
-            text: `${index + 1}`,
-            color: "white",
-            fontWeight: "bold",
-          },
-          icon: {
-            path: google.maps.SymbolPath.CIRCLE,
-            scale: 25,
-            fillColor: "#2563eb",
-            fillOpacity: 0.9,
-            strokeColor: "#ffffff",
-            strokeWeight: 3,
-          },
-          animation: google.maps.Animation.DROP,
-        })
-
-        const infoWindow = new google.maps.InfoWindow({
-          content: `
-            <div class="p-3 min-w-[200px]">
-              <h3 class="font-bold text-base text-blue-600 mb-2">🎯 Stop ${index + 1}</h3>
-              <p class="text-sm text-gray-700 mb-1"><strong>📍 Address:</strong> ${stop.address}</p>
-              <p class="text-sm text-gray-600 mb-1"><strong>⏱️ Duration:</strong> ${stop.duration} minutes</p>
-              <p class="text-xs text-gray-500 mt-2">Click on parking meters nearby to see rates!</p>
-            </div>
-          `,
-        })
-
-        // Show info window on hover
-        marker.addListener("mouseover", () => {
-          infoWindow.open(map, marker)
-        })
-
-        // Hide info window when mouse leaves (with delay)
-        marker.addListener("mouseout", () => {
-          setTimeout(() => {
-            infoWindow.close()
-          }, 2000)
-        })
-
-        // Keep open on click
-        marker.addListener("click", () => {
-          infoWindow.open(map, marker)
-        })
-
-        newMarkers.push(marker)
-      }
-    })
-
-    setMarkers(newMarkers)
-  }, [map, stops])
-
-  // Add parking meter markers
+  // Add stop markers at meter locations
   useEffect(() => {
     if (!map || !route) return
 
+    const newMarkers: google.maps.Marker[] = []
+
     route.forEach((segment, index) => {
-      const parkingMarker = new google.maps.Marker({
+      // Use parking meter coordinates instead of destination coordinates
+      const marker = new google.maps.Marker({
         position: { lat: segment.parking_meter.lat, lng: segment.parking_meter.lng },
         map: map,
-        title: `Parking Meter ${segment.parking_meter.meter_id}`,
+        title: `Stop ${index + 1} - ${segment.to_stop.address}`,
+        label: {
+          text: `${index + 1}`,
+          color: "white",
+          fontWeight: "bold",
+        },
         icon: {
-          url: "data:image/svg+xml;charset=UTF-8," + encodeURIComponent(`
-            <svg width="30" height="30" viewBox="0 0 30 30" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <circle cx="15" cy="15" r="12" fill="#10b981" stroke="#ffffff" stroke-width="3"/>
-              <text x="15" y="19" text-anchor="middle" fill="white" font-size="12" font-weight="bold">P</text>
-            </svg>
-          `),
-          scaledSize: new google.maps.Size(30, 30),
-          anchor: new google.maps.Point(15, 15),
+          path: google.maps.SymbolPath.CIRCLE,
+          scale: 25,
+          fillColor: "#2563eb",
+          fillOpacity: 0.9,
+          strokeColor: "#ffffff",
+          strokeWeight: 3,
         },
         animation: google.maps.Animation.DROP,
       })
 
       const infoWindow = new google.maps.InfoWindow({
         content: `
-          <div class="p-4 min-w-[250px]">
-            <h3 class="font-bold text-base text-green-600 mb-3">🅿️ Parking Meter #${segment.parking_meter.meter_id}</h3>
-            <div class="space-y-2">
-              <p class="text-sm"><strong>📍 Area:</strong> ${segment.parking_meter.local_area}</p>
-              <p class="text-sm"><strong>🏷️ Type:</strong> ${segment.parking_meter.meter_type}</p>
-              <div class="bg-green-50 p-2 rounded">
-                <p class="text-sm font-semibold text-green-800"><strong>💰 Rates:</strong></p>
-                <p class="text-xs text-green-700">• 9AM-6PM: $${segment.parking_meter.rate_mf_9a_6p}/hour</p>
-                <p class="text-xs text-green-700">• 6PM-10PM: $${segment.parking_meter.rate_mf_6p_10}/hour</p>
-              </div>
-              <p class="text-sm"><strong>💳 Credit Card:</strong> ${segment.parking_meter.credit_card ? "✅ Accepted" : "❌ Cash Only"}</p>
-              <div class="bg-blue-50 p-2 rounded mt-2">
-                <p class="text-sm font-bold text-blue-800">💵 Your Cost: $${(segment as any).parking_cost?.toFixed(2) || '0.00'}</p>
-                <p class="text-xs text-blue-600">Based on your planned visit duration</p>
-              </div>
+          <div class="p-3 min-w-[250px]">
+            <h3 class="font-bold text-base text-blue-600 mb-2">🎯 Stop ${index + 1}</h3>
+            <p class="text-sm text-gray-700 mb-1"><strong>📍 Destination:</strong> ${segment.to_stop.address}</p>
+            <p class="text-sm text-gray-600 mb-1"><strong>⏱️ Duration:</strong> ${segment.to_stop.duration || 'N/A'} minutes</p>
+            <div class="bg-green-50 p-2 rounded mt-2">
+              <p class="text-sm font-semibold text-green-800"><strong>🅿️ Parking at Meter #${segment.parking_meter.meter_id}</strong></p>
+              <p class="text-xs text-green-700">• Area: ${segment.parking_meter.local_area}</p>
+              <p class="text-xs text-green-700">• Rate (9AM-6PM): $${segment.parking_meter.rate_mf_9a_6p}/hour</p>
+              <p class="text-xs text-green-700">• Rate (6PM-10PM): $${segment.parking_meter.rate_mf_6p_10}/hour</p>
+              <p class="text-xs text-green-700">• Credit Card: ${segment.parking_meter.credit_card ? "✅ Yes" : "❌ No"}</p>
             </div>
           </div>
         `,
       })
 
       // Show info window on hover
-      parkingMarker.addListener("mouseover", () => {
-        infoWindow.open(map, parkingMarker)
+      marker.addListener("mouseover", () => {
+        infoWindow.open(map, marker)
       })
 
       // Hide info window when mouse leaves (with delay)
-      parkingMarker.addListener("mouseout", () => {
+      marker.addListener("mouseout", () => {
         setTimeout(() => {
           infoWindow.close()
-        }, 3000)
+        }, 2000)
       })
 
       // Keep open on click
-      parkingMarker.addListener("click", () => {
-        infoWindow.open(map, parkingMarker)
+      marker.addListener("click", () => {
+        infoWindow.open(map, marker)
       })
 
-      setMarkers(prev => [...prev, parkingMarker])
+      newMarkers.push(marker)
     })
+
+    setMarkers(newMarkers)
   }, [map, route])
+
+  // Parking meter markers removed - stop markers now show at meter locations
 
   // Draw route
   useEffect(() => {
