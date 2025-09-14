@@ -161,6 +161,11 @@ func CalculateWalkingTime(from, to *domain.Location) int {
 	return int(timeMinutes)
 }
 
+// CalculateDistance calculates the distance between two points on Earth using Haversine formula
+func CalculateDistance(from, to *domain.Location) float64 {
+	return haversineDistance(from.Lat, from.Lng, to.Lat, to.Lng)
+}
+
 // haversineDistance calculates the distance between two points on Earth using Haversine formula
 func haversineDistance(lat1, lng1, lat2, lng2 float64) float64 {
 	const R = 6371 // Earth's radius in kilometers

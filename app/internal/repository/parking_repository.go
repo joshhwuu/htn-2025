@@ -6,10 +6,12 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"sort"
 	"strconv"
 	"time"
 
 	"vancouver-trip-planner/internal/domain"
+	"vancouver-trip-planner/pkg/maps"
 )
 
 // VancouverParkingResponse represents the API response structure
@@ -42,6 +44,12 @@ type VancouverParkingData struct {
 	} `json:"geo_point_2d"`
 }
 
+// MeterWithDistance holds a parking meter and its distance from the target location
+type MeterWithDistance struct {
+	Meter   *domain.ParkingMeter
+	Distance float64 // in kilometers
+}
+
 // ParkingRepository handles parking meter data operations
 type ParkingRepository interface {
 	GetParkingMetersNear(lat, lng, radiusKm float64) ([]*domain.ParkingMeter, error)
@@ -62,12 +70,25 @@ func NewVancouverParkingRepository() *VancouverParkingRepository {
 	}
 }
 
-// GetParkingMetersNear fetches parking meters within a radius of the given location
+// GetParkingMetersNear fetches parking meters within a radius of the given location using spatial query
 func (r *VancouverParkingRepository) GetParkingMetersNear(lat, lng, radiusKm float64) ([]*domain.ParkingMeter, error) {
-	// For simplicity, get all meters and filter by distance
-	// This could be optimized by querying specific local areas based on coordinates
-	// Vancouver API has a max limit of 100
-	url := fmt.Sprintf("%s?limit=100&select=*", r.baseURL)
+	fmt.Printf("[DEBUG] Finding parking meters for stop: (%.6f, %.6f) within %.1fkm radius\n", lat, lng, radiusKm)
+	
+	// Use bounding box approach - this works reliably with the Vancouver API
+	// Create a bounding box around the target location (±0.01 degrees ≈ 1km)
+	latMin := lat - 0.01
+	latMax := lat + 0.01
+	lngMin := lng - 0.01
+	lngMax := lng + 0.01
+	
+	whereClause := fmt.Sprintf("in_bbox(geo_point_2d, %f, %f, %f, %f)", latMin, lngMin, latMax, lngMax)
+	
+	params := url.Values{}
+	params.Add("where", whereClause)
+	params.Add("limit", "50") // Get up to 50 meters within the bounding box
+	params.Add("select", "*")
+	
+	url := fmt.Sprintf("%s?%s", r.baseURL, params.Encode())
 	fmt.Printf("[DEBUG] Calling Vancouver API: %s\n", url)
 
 	resp, err := r.httpClient.Get(url)
@@ -100,17 +121,50 @@ func (r *VancouverParkingRepository) GetParkingMetersNear(lat, lng, radiusKm flo
 		return nil, fmt.Errorf("failed to unmarshal response: %w", err)
 	}
 
-	fmt.Printf("[DEBUG] Vancouver API returned %d results\n", len(apiResp.Results))
+	fmt.Printf("[DEBUG] Vancouver API returned %d results within bounding box\n", len(apiResp.Results))
 
-	// For now, return all meters (or first 50) to ensure we have parking options
-	var nearbyMeters []*domain.ParkingMeter
-	maxMeters := 50
-	for i, data := range apiResp.Results {
-		if i >= maxMeters {
-			break
-		}
+	// Convert API results to domain models and calculate exact distances for sorting
+	var metersWithDistance []MeterWithDistance
+	for _, data := range apiResp.Results {
 		meter := r.convertToDomainModel(data)
-		nearbyMeters = append(nearbyMeters, meter)
+		
+		// Calculate exact distance using haversine formula for precise sorting
+		distance := maps.CalculateDistance(
+			&domain.Location{Lat: lat, Lng: lng},
+			&domain.Location{Lat: meter.Lat, Lng: meter.Lng},
+		)
+		
+		// Convert distance from meters to kilometers
+		distanceKm := distance / 1000.0
+		
+		// Filter by actual distance (bounding box might include some meters slightly outside radius)
+		if distanceKm <= radiusKm {
+			metersWithDistance = append(metersWithDistance, MeterWithDistance{
+				Meter:   meter,
+				Distance: distanceKm,
+			})
+		}
+	}
+
+	fmt.Printf("[DEBUG] Found %d meters within %.1fkm radius after distance filtering\n", len(metersWithDistance), radiusKm)
+
+	// Sort by distance (closest first)
+	sort.Slice(metersWithDistance, func(i, j int) bool {
+		return metersWithDistance[i].Distance < metersWithDistance[j].Distance
+	})
+	
+	// Convert back to domain models and limit to top 10
+	var nearbyMeters []*domain.ParkingMeter
+	maxMeters := 10
+	if len(metersWithDistance) < maxMeters {
+		maxMeters = len(metersWithDistance)
+	}
+	
+	for i := 0; i < maxMeters; i++ {
+		nearbyMeters = append(nearbyMeters, metersWithDistance[i].Meter)
+		fmt.Printf("[DEBUG] Meter %s at distance %.3fkm\n", 
+			metersWithDistance[i].Meter.MeterID, 
+			metersWithDistance[i].Distance)
 	}
 
 	return nearbyMeters, nil

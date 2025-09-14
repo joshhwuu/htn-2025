@@ -144,30 +144,13 @@ func (s *DefaultPricingService) GetOptimalParkingMeter(meters []*domain.ParkingM
 		return nil, 0.0, nil
 	}
 
-	var bestMeter *domain.ParkingMeter
-	bestCost := math.Inf(1)
-
-	for _, meter := range meters {
-		cost, err := s.CalculateParkingCost(meter, arrivalTime, durationMinutes)
-		if err != nil {
-			continue
-		}
-
-		// Check if meter can accommodate the duration
-		_, timeLimit := s.GetParkingRateAtTime(meter, arrivalTime)
-		if timeLimit > 0 && durationMinutes > timeLimit*60 {
-			continue // Skip meters that can't accommodate the full duration
-		}
-
-		if cost < bestCost {
-			bestCost = cost
-			bestMeter = meter
-		}
+	// For now, just return the first meter since they're already sorted by distance
+	// In a more sophisticated system, we could implement a hybrid cost-distance optimization
+	meter := meters[0]
+	cost, err := s.CalculateParkingCost(meter, arrivalTime, durationMinutes)
+	if err != nil {
+		return nil, 0.0, err
 	}
 
-	if bestMeter == nil {
-		return nil, 0.0, nil
-	}
-
-	return bestMeter, bestCost, nil
+	return meter, cost, nil
 }

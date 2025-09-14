@@ -40,7 +40,9 @@ export function PlacesAutocomplete({
   const [suggestions, setSuggestions] = useState<PlaceResult[]>([])
   const [showSuggestions, setShowSuggestions] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
+  const [selectedIndex, setSelectedIndex] = useState(-1)
   const inputRef = useRef<HTMLInputElement>(null)
+  const containerRef = useRef<HTMLDivElement>(null)
   const timeoutRef = useRef<NodeJS.Timeout>()
 
   useEffect(() => {
@@ -48,6 +50,7 @@ export function PlacesAutocomplete({
     if (stringValue.length < 3) {
       setSuggestions([])
       setShowSuggestions(false)
+      setSelectedIndex(-1)
       return
     }
 
@@ -67,6 +70,7 @@ export function PlacesAutocomplete({
           const data = await response.json()
           setSuggestions(data.predictions || [])
           setShowSuggestions(true)
+          setSelectedIndex(-1)
         } else {
           console.error("Error fetching places:", response.status, response.statusText)
         }
@@ -83,6 +87,23 @@ export function PlacesAutocomplete({
       }
     }
   }, [value])
+
+  // Handle click outside to close suggestions
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
+        setShowSuggestions(false)
+      }
+    }
+
+    if (showSuggestions) {
+      document.addEventListener('mousedown', handleClickOutside)
+    }
+
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside)
+    }
+  }, [showSuggestions])
 
   if (type) {
     return (
@@ -101,9 +122,10 @@ export function PlacesAutocomplete({
   }
 
   const handlePlaceSelect = async (place: PlaceResult) => {
-    onChange(place.description)
+    // Immediately close suggestions and clear them
     setShowSuggestions(false)
     setSuggestions([])
+    onChange(place.description)
     
     // Get detailed place information including coordinates
     if (onPlaceSelect) {
@@ -148,18 +170,49 @@ export function PlacesAutocomplete({
     onChange(e.target.value)
   }
 
-  const handleBlur = () => {
-    setTimeout(() => setShowSuggestions(false), 200)
+  const handleFocus = () => {
+    if (String(value).length >= 3 && suggestions.length > 0) {
+      setShowSuggestions(true)
+    }
+  }
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (!showSuggestions || suggestions.length === 0) return
+
+    switch (e.key) {
+      case 'ArrowDown':
+        e.preventDefault()
+        setSelectedIndex(prev => 
+          prev < suggestions.length - 1 ? prev + 1 : 0
+        )
+        break
+      case 'ArrowUp':
+        e.preventDefault()
+        setSelectedIndex(prev => 
+          prev > 0 ? prev - 1 : suggestions.length - 1
+        )
+        break
+      case 'Enter':
+        e.preventDefault()
+        if (selectedIndex >= 0 && selectedIndex < suggestions.length) {
+          handlePlaceSelect(suggestions[selectedIndex])
+        }
+        break
+      case 'Escape':
+        setShowSuggestions(false)
+        setSelectedIndex(-1)
+        break
+    }
   }
 
   return (
-    <div className="relative">
+    <div ref={containerRef} className="relative">
       <Input
         ref={inputRef}
         value={String(value)}
         onChange={handleInputChange}
-        onBlur={handleBlur}
-        onFocus={() => String(value).length >= 3 && setShowSuggestions(true)}
+        onFocus={handleFocus}
+        onKeyDown={handleKeyDown}
         placeholder={placeholder}
         className={className}
         defaultValue={defaultValue}
@@ -173,12 +226,15 @@ export function PlacesAutocomplete({
 
       {showSuggestions && suggestions.length > 0 && (
         <div className="absolute z-50 w-full mt-1 bg-background border border-border rounded-md shadow-lg max-h-60 overflow-y-auto">
-          {suggestions.map((suggestion) => (
+          {suggestions.map((suggestion, index) => (
             <button
               key={suggestion.place_id}
               type="button"
-              className="w-full px-4 py-2 text-left hover:bg-muted focus:bg-muted focus:outline-none"
+              className={`w-full px-4 py-2 text-left hover:bg-muted focus:bg-muted focus:outline-none ${
+                index === selectedIndex ? 'bg-muted' : ''
+              }`}
               onClick={() => handlePlaceSelect(suggestion)}
+              onMouseEnter={() => setSelectedIndex(index)}
             >
               <div className="font-medium text-sm">
                 {suggestion.structured_formatting.main_text}

@@ -30,7 +30,7 @@ interface ParkingMeter {
 }
 
 interface RouteSegment {
-  from_stop: {
+  from_stop?: {
     id: string
     address: string
     lat: number
@@ -483,7 +483,9 @@ function ResultsContent() {
                           <div className="grid grid-cols-2 gap-2 text-xs text-muted-foreground">
                             <div className="flex items-center space-x-1">
                               <Car className="h-3 w-3" />
-                              <span>{segment.travel_time_minutes}min drive</span>
+                              <span>
+                                {segment.from_stop ? `${segment.travel_time_minutes}min drive` : 'Starting point'}
+                              </span>
                             </div>
                             <div className="flex items-center space-x-1">
                               <Navigation className="h-3 w-3" />

@@ -15,7 +15,7 @@ interface GoogleMapProps {
     duration: number
   }>
   route?: Array<{
-    from_stop: {
+    from_stop?: {
       lat: number
       lng: number
       address: string
@@ -148,13 +148,15 @@ const MapComponent = ({ stops, route, className }: GoogleMapProps) => {
   useEffect(() => {
     if (!directionsService || !directionsRenderer || !route || route.length === 0) return
 
-    const waypoints = route.map(segment => ({
-      location: { lat: segment.from_stop.lat, lng: segment.from_stop.lng },
-      stopover: true,
-    }))
+    const waypoints = route
+      .filter(segment => segment.from_stop !== null)
+      .map(segment => ({
+        location: { lat: segment.from_stop!.lat, lng: segment.from_stop!.lng },
+        stopover: true,
+      }))
 
     const request: google.maps.DirectionsRequest = {
-      origin: { lat: route[0].from_stop.lat, lng: route[0].from_stop.lng },
+      origin: { lat: route[0].to_stop.lat, lng: route[0].to_stop.lng },
       destination: { lat: route[route.length - 1].to_stop.lat, lng: route[route.length - 1].to_stop.lng },
       waypoints: waypoints.slice(1, -1),
       travelMode: google.maps.TravelMode.DRIVING,

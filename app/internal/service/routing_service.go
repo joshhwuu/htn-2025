@@ -159,62 +159,82 @@ func (s *DefaultRoutingService) buildRouteCandidate(stops []*domain.Stop, parkin
 
 	fmt.Printf("[DEBUG] Building route with %d stops in sequence\n", len(stops))
 
-	for i := 1; i < len(stops); i++ {
-		fromStop := stops[i-1]
-		toStop := stops[i]
+	// Process each stop to find parking
+	for i := 0; i < len(stops); i++ {
+		currentStop := stops[i]
+		fmt.Printf("[DEBUG] Processing stop %d: %s\n", i+1, currentStop.Address)
 
-		fmt.Printf("[DEBUG] Segment %d: %s -> %s\n", i, fromStop.Address, toStop.Address)
-
-		// Calculate travel time from previous stop to current stop
-		travelTime, err := s.mapsService.GetTravelTime(
-			&domain.Location{Lat: fromStop.Lat, Lng: fromStop.Lng},
-			&domain.Location{Lat: toStop.Lat, Lng: toStop.Lng},
-			currentTime,
-		)
-		if err != nil {
-			fmt.Printf("[DEBUG] Failed to calculate travel time: %v\n", err)
-			return nil
-		}
-
-		// Calculate arrival time at this stop
-		currentTime = currentTime.Add(time.Duration(travelTime) * time.Minute)
-
-		// Find optimal parking for this destination stop
-		meters := parkingOptions[toStop.ID]
+		// Find optimal parking for this stop
+		meters := parkingOptions[currentStop.ID]
 		if len(meters) == 0 {
-			fmt.Printf("[DEBUG] No parking meters available for stop: %s\n", toStop.Address)
+			fmt.Printf("[DEBUG] No parking meters available for stop: %s\n", currentStop.Address)
 			return nil
 		}
 
-		bestMeter, parkingCost, err := s.pricingService.GetOptimalParkingMeter(meters, currentTime, toStop.Duration)
+		bestMeter, parkingCost, err := s.pricingService.GetOptimalParkingMeter(meters, currentTime, currentStop.Duration)
 		if err != nil || bestMeter == nil {
 			fmt.Printf("[DEBUG] Failed to find optimal parking: %v\n", err)
 			return nil
 		}
 
+		fmt.Printf("[DEBUG] Selected parking meter %s at (%.6f, %.6f) for stop %s\n",
+			bestMeter.MeterID, bestMeter.Lat, bestMeter.Lng, currentStop.Address)
+
+		var travelTime int
+		var fromStop *domain.Stop
+
+		if i == 0 {
+			// For the first stop, we start at the stop location (no previous stop)
+			travelTime = 0
+			fromStop = nil // No previous stop for the first segment
+		} else {
+			// Calculate travel time from previous stop to this stop
+			prevStop := stops[i-1]
+			travelTime, err = s.mapsService.GetTravelTime(
+				&domain.Location{Lat: prevStop.Lat, Lng: prevStop.Lng},
+				&domain.Location{Lat: currentStop.Lat, Lng: currentStop.Lng},
+				currentTime,
+			)
+			if err != nil {
+				fmt.Printf("[DEBUG] Failed to calculate travel time: %v\n", err)
+				return nil
+			}
+			fromStop = prevStop
+		}
+
+		// Calculate arrival time at this stop
+		currentTime = currentTime.Add(time.Duration(travelTime) * time.Minute)
+
 		// Calculate walking time from parking to destination
 		walkingTime := maps.CalculateWalkingTime(
 			&domain.Location{Lat: bestMeter.Lat, Lng: bestMeter.Lng},
-			&domain.Location{Lat: toStop.Lat, Lng: toStop.Lng},
+			&domain.Location{Lat: currentStop.Lat, Lng: currentStop.Lng},
 		)
 
+		// Create segment
 		segment := domain.RouteSegment{
 			FromStop:     fromStop,
-			ToStop:       toStop,
+			ToStop:       currentStop,
 			ParkingMeter: bestMeter,
 			TravelTime:   travelTime,
 			ParkingCost:  parkingCost,
 			WalkingTime:  walkingTime,
 		}
 
+		if fromStop == nil {
+			fmt.Printf("[DEBUG] Created segment with nil fromStop for stop: %s\n", currentStop.Address)
+		} else {
+			fmt.Printf("[DEBUG] Created segment from %s to %s\n", fromStop.Address, currentStop.Address)
+		}
+
 		segments = append(segments, segment)
 		totalCost += parkingCost
-		totalTime += travelTime + walkingTime + toStop.Duration
+		totalTime += travelTime + walkingTime + currentStop.Duration
 
 		// Update current time to account for walking and visit duration
-		currentTime = currentTime.Add(time.Duration(walkingTime+toStop.Duration) * time.Minute)
+		currentTime = currentTime.Add(time.Duration(walkingTime+currentStop.Duration) * time.Minute)
 
-		fmt.Printf("[DEBUG] Segment complete - Travel: %dm, Walk: %dm, Cost: $%.2f\n", travelTime, walkingTime, parkingCost)
+		fmt.Printf("[DEBUG] Stop complete - Travel: %dm, Walk: %dm, Cost: $%.2f\n", travelTime, walkingTime, parkingCost)
 	}
 
 	// Calculate hybrid score
