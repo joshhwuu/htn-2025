@@ -43,23 +43,6 @@ export function PlacesAutocomplete({
   const inputRef = useRef<HTMLInputElement>(null)
   const timeoutRef = useRef<NodeJS.Timeout>()
 
-  // If this is not a places autocomplete (has type prop), render as regular input
-  if (type) {
-    return (
-      <Input
-        type={type}
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        placeholder={placeholder}
-        className={className}
-        min={min}
-        max={max}
-        step={step}
-        defaultValue={defaultValue}
-      />
-    )
-  }
-
   useEffect(() => {
     const stringValue = String(value)
     if (stringValue.length < 3) {
@@ -100,6 +83,22 @@ export function PlacesAutocomplete({
       }
     }
   }, [value])
+
+  if (type) {
+    return (
+      <Input
+        type={type}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder}
+        className={className}
+        min={min}
+        max={max}
+        step={step}
+        defaultValue={defaultValue}
+      />
+    )
+  }
 
   const handlePlaceSelect = async (place: PlaceResult) => {
     onChange(place.description)
