@@ -43,7 +43,47 @@ export function PlacesAutocomplete({
   const inputRef = useRef<HTMLInputElement>(null)
   const timeoutRef = useRef<NodeJS.Timeout>()
 
-  // If this is not a places autocomplete (has type prop), render as regular input
+  useEffect(() => {
+    const stringValue = String(value)
+    if (stringValue.length < 3) {
+      setSuggestions([])
+      setShowSuggestions(false)
+      return
+    }
+
+    if (timeoutRef.current) {
+      clearTimeout(timeoutRef.current)
+    }
+
+    timeoutRef.current = setTimeout(async () => {
+      setIsLoading(true)
+      try {
+        // Use our server-side API route to avoid CORS issues
+        const response = await fetch(
+          `/api/places/autocomplete?input=${encodeURIComponent(stringValue)}`
+        )
+        
+        if (response.ok) {
+          const data = await response.json()
+          setSuggestions(data.predictions || [])
+          setShowSuggestions(true)
+        } else {
+          console.error("Error fetching places:", response.status, response.statusText)
+        }
+      } catch (error) {
+        console.error("Error fetching places:", error)
+      } finally {
+        setIsLoading(false)
+      }
+    }, 300)
+
+    return () => {
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current)
+      }
+    }
+  }, [value])
+
   if (type) {
     return (
       <Input
@@ -60,87 +100,48 @@ export function PlacesAutocomplete({
     )
   }
 
-  useEffect(() => {
-    const stringValue = String(value)
-    if (stringValue.length < 3) {
-      setSuggestions([])
-      setShowSuggestions(false)
-      return
-    }
-
-    if (timeoutRef.current) {
-      clearTimeout(timeoutRef.current)
-    }
-
-    timeoutRef.current = setTimeout(async () => {
-      setIsLoading(true)
+  const handlePlaceSelect = async (place: PlaceResult) => {
+    onChange(place.description)
+    setShowSuggestions(false)
+    setSuggestions([])
+    
+    // Get detailed place information including coordinates
+    if (onPlaceSelect) {
       try {
-        const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || process.env.GOOGLE_MAPS_API_KEY
-        if (!apiKey || apiKey === "your_google_maps_api_key_here") {
-          // Mock suggestions when API key is not available
-          const mockSuggestions: PlaceResult[] = [
-            {
-              place_id: "1",
-              description: `${stringValue}, Vancouver, BC, Canada`,
-              structured_formatting: {
-                main_text: stringValue,
-                secondary_text: "Vancouver, BC, Canada"
-              }
-            },
-            {
-              place_id: "2", 
-              description: `${stringValue} Street, Vancouver, BC, Canada`,
-              structured_formatting: {
-                main_text: `${stringValue} Street`,
-                secondary_text: "Vancouver, BC, Canada"
-              }
-            }
-          ]
-          
-          setSuggestions(mockSuggestions)
-          setShowSuggestions(true)
-          return
-        }
-
-        // Use actual Google Places API
         const response = await fetch(
-          `https://maps.googleapis.com/maps/api/place/autocomplete/json?input=${encodeURIComponent(
-            stringValue
-          )}&key=${apiKey}&types=establishment|geocode&components=country:ca`
+          `/api/places/details?place_id=${encodeURIComponent(place.place_id)}`
         )
         
         if (response.ok) {
           const data = await response.json()
-          setSuggestions(data.predictions || [])
-          setShowSuggestions(true)
+          const result = data.result
+          
+          if (result && result.geometry && result.geometry.location) {
+            onPlaceSelect({
+              address: result.formatted_address || place.description,
+              lat: result.geometry.location.lat,
+              lng: result.geometry.location.lng
+            })
+          }
+        } else {
+          console.error("Error fetching place details:", response.status, response.statusText)
+          // Fallback to mock coordinates if details API fails
+          onPlaceSelect({
+            address: place.description,
+            lat: 49.2827 + (Math.random() - 0.5) * 0.1,
+            lng: -123.1207 + (Math.random() - 0.5) * 0.1
+          })
         }
       } catch (error) {
-        console.error("Error fetching places:", error)
-      } finally {
-        setIsLoading(false)
-      }
-    }, 300)
-
-    return () => {
-      if (timeoutRef.current) {
-        clearTimeout(timeoutRef.current)
+        console.error("Error fetching place details:", error)
+        // Fallback to mock coordinates if there's an error
+        onPlaceSelect({
+          address: place.description,
+          lat: 49.2827 + (Math.random() - 0.5) * 0.1,
+          lng: -123.1207 + (Math.random() - 0.5) * 0.1
+        })
       }
     }
-  }, [value])
-
-  const handlePlaceSelect = (place: PlaceResult) => {
-    onChange(place.description)
-    
-    // Mock coordinates for Vancouver area
-    const mockCoordinates = {
-      address: place.description,
-      lat: 49.2827 + (Math.random() - 0.5) * 0.1,
-      lng: -123.1207 + (Math.random() - 0.5) * 0.1
-    }
-    
-    onPlaceSelect?.(mockCoordinates)
-    setShowSuggestions(false)
-    setSuggestions([])
   }
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
