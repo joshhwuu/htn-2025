@@ -69,7 +69,7 @@ func (s *DefaultRoutingService) PlanTrip(request *domain.TripRequest) ([]*domain
 	stopParkingOptions := make(map[string][]*domain.ParkingMeter)
 	for _, stop := range stops {
 		fmt.Printf("[DEBUG] Finding parking meters for stop: %s (%.6f, %.6f)\n", stop.Address, stop.Lat, stop.Lng)
-		meters, err := s.parkingRepo.GetParkingMetersNear(stop.Lat, stop.Lng, 2.0) // 2km radius
+		meters, err := s.parkingRepo.GetParkingMetersNear(stop.Lat, stop.Lng, 1.0) // 1km radius
 		if err != nil {
 			fmt.Printf("[DEBUG] Error getting parking meters: %v\n", err)
 			return nil, fmt.Errorf("failed to get parking meters for stop %s: %w", stop.Address, err)
