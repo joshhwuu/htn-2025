@@ -141,104 +141,86 @@ func (s *DefaultRoutingService) generateRoutes(stops []*domain.Stop, parkingOpti
 func (s *DefaultRoutingService) evaluateRouteWithParkingCombinations(stops []*domain.Stop, parkingOptions map[string][]*domain.ParkingMeter, request *domain.TripRequest) []*RouteCandidate {
 	var candidates []*RouteCandidate
 
-	// For each stop (except the first), try different parking options
-	// Using a simplified approach: select best parking for each stop independently
-	for i, stop := range stops {
-		if i == 0 {
-			continue // No parking needed for starting point
-		}
-
-		meters := parkingOptions[stop.ID]
-		if len(meters) == 0 {
-			continue // No parking available
-		}
-
-		// Calculate arrival time at this stop
-		arrivalTime := s.calculateArrivalTime(stops[:i+1], request.StartTime)
-
-		// Find best parking option for this stop
-		bestMeter, cost, err := s.pricingService.GetOptimalParkingMeter(meters, arrivalTime, stop.Duration)
-		if err != nil || bestMeter == nil {
-			continue
-		}
-
-		// Build route candidate
-		candidate := s.buildRouteCandidate(stops, i, bestMeter, cost, arrivalTime, request)
-		if candidate != nil {
-			candidates = append(candidates, candidate)
-		}
+	// Build complete route by finding optimal parking for each destination stop
+	candidate := s.buildRouteCandidate(stops, parkingOptions, request)
+	if candidate != nil {
+		candidates = append(candidates, candidate)
 	}
 
 	return candidates
 }
 
 // buildRouteCandidate constructs a complete route candidate
-func (s *DefaultRoutingService) buildRouteCandidate(stops []*domain.Stop, currentStopIndex int, meter *domain.ParkingMeter, parkingCost float64, arrivalTime time.Time, request *domain.TripRequest) *RouteCandidate {
+func (s *DefaultRoutingService) buildRouteCandidate(stops []*domain.Stop, parkingOptions map[string][]*domain.ParkingMeter, request *domain.TripRequest) *RouteCandidate {
 	var segments []domain.RouteSegment
 	totalCost := 0.0
 	totalTime := 0
 	currentTime := request.StartTime
 
-	for i := 0; i < len(stops); i++ {
-		if i == 0 {
-			continue // Starting point
-		}
+	fmt.Printf("[DEBUG] Building route with %d stops in sequence\n", len(stops))
 
+	for i := 1; i < len(stops); i++ {
 		fromStop := stops[i-1]
 		toStop := stops[i]
 
-		// Calculate travel time
+		fmt.Printf("[DEBUG] Segment %d: %s -> %s\n", i, fromStop.Address, toStop.Address)
+
+		// Calculate travel time from previous stop to current stop
 		travelTime, err := s.mapsService.GetTravelTime(
 			&domain.Location{Lat: fromStop.Lat, Lng: fromStop.Lng},
 			&domain.Location{Lat: toStop.Lat, Lng: toStop.Lng},
 			currentTime,
 		)
 		if err != nil {
-			return nil // Skip this route if we can't calculate travel time
+			fmt.Printf("[DEBUG] Failed to calculate travel time: %v\n", err)
+			return nil
 		}
 
-		// Use the best parking meter for this stop
-		var segmentMeter *domain.ParkingMeter
-		var segmentCost float64
+		// Calculate arrival time at this stop
+		currentTime = currentTime.Add(time.Duration(travelTime) * time.Minute)
 
-		if i == currentStopIndex {
-			segmentMeter = meter
-			segmentCost = parkingCost
-		} else {
-			// Calculate optimal parking for other stops
-			meters, _ := s.parkingRepo.GetParkingMetersNear(toStop.Lat, toStop.Lng, 0.5)
-			segmentArrival := currentTime.Add(time.Duration(travelTime) * time.Minute)
-			segmentMeter, segmentCost, _ = s.pricingService.GetOptimalParkingMeter(meters, segmentArrival, toStop.Duration)
-			if segmentMeter == nil {
-				return nil // No parking available
-			}
+		// Find optimal parking for this destination stop
+		meters := parkingOptions[toStop.ID]
+		if len(meters) == 0 {
+			fmt.Printf("[DEBUG] No parking meters available for stop: %s\n", toStop.Address)
+			return nil
+		}
+
+		bestMeter, parkingCost, err := s.pricingService.GetOptimalParkingMeter(meters, currentTime, toStop.Duration)
+		if err != nil || bestMeter == nil {
+			fmt.Printf("[DEBUG] Failed to find optimal parking: %v\n", err)
+			return nil
 		}
 
 		// Calculate walking time from parking to destination
 		walkingTime := maps.CalculateWalkingTime(
-			&domain.Location{Lat: segmentMeter.Lat, Lng: segmentMeter.Lng},
+			&domain.Location{Lat: bestMeter.Lat, Lng: bestMeter.Lng},
 			&domain.Location{Lat: toStop.Lat, Lng: toStop.Lng},
 		)
 
 		segment := domain.RouteSegment{
 			FromStop:     fromStop,
 			ToStop:       toStop,
-			ParkingMeter: segmentMeter,
+			ParkingMeter: bestMeter,
 			TravelTime:   travelTime,
-			ParkingCost:  segmentCost,
+			ParkingCost:  parkingCost,
 			WalkingTime:  walkingTime,
 		}
 
 		segments = append(segments, segment)
-		totalCost += segmentCost
+		totalCost += parkingCost
 		totalTime += travelTime + walkingTime + toStop.Duration
 
-		// Update current time
-		currentTime = currentTime.Add(time.Duration(travelTime+walkingTime+toStop.Duration) * time.Minute)
+		// Update current time to account for walking and visit duration
+		currentTime = currentTime.Add(time.Duration(walkingTime+toStop.Duration) * time.Minute)
+
+		fmt.Printf("[DEBUG] Segment complete - Travel: %dm, Walk: %dm, Cost: $%.2f\n", travelTime, walkingTime, parkingCost)
 	}
 
 	// Calculate hybrid score
 	hybridScore := request.Preferences.CostWeight*totalCost + request.Preferences.TimeWeight*float64(totalTime)/60.0
+
+	fmt.Printf("[DEBUG] Route complete - Total Cost: $%.2f, Total Time: %dm, Hybrid Score: %.2f\n", totalCost, totalTime, hybridScore)
 
 	return &RouteCandidate{
 		Stops:       stops,
